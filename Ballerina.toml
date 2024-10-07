@@ -1,0 +1,8 @@
+[package]
+org = "wso2"
+name = "bal_rate_limit"
+version = "0.1.0"
+distribution = "2201.10.0"
+
+[build-options]
+observabilityIncluded = true
