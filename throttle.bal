@@ -8,11 +8,16 @@ isolated int count = 0 ;
 
 service class RequestInterceptor {
     *http:RequestInterceptor;
-    isolated resource function 'default [string... path](http:RequestContext ctx, @http:Header {name: "x-jwt-assertion"} string jwtAssertion)
-        returns http:TooManyRequests|http:NextService|error? {
+    isolated resource function 'default [string... path](http:RequestContext ctx, @http:Header {name: "x-jwt-assertion"} string? jwtAssertion)
+        returns http:TooManyRequests|http:Unauthorized| http:NextService|error? {
 
         if localDev {
             return ctx.next();
+        }
+
+        if jwtAssertion is () {
+            return <http:Unauthorized> {
+            };
         }
 
         [jwt:Header, jwt:Payload] [_, payload] = check jwt:decode(jwtAssertion);
