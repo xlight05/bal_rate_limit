@@ -20,7 +20,10 @@ service class RequestInterceptor {
             };
         }
 
+        io:println(jwtAssertion);
+
         [jwt:Header, jwt:Payload] [_, payload] = check jwt:decode(jwtAssertion);
+        io:println("JWT Payload: " + payload.toString());
         string email = payload["email"].toString();
         io:println("User Email: " + email);
         if isUsageLimitReached(email) {
