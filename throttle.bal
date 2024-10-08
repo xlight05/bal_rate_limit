@@ -15,6 +15,7 @@ service class RequestInterceptor {
             return ctx.next();
         }
 
+        //To enable try it mode in choreo.
         if jwtAssertion is () {
             return <http:Unauthorized> {
             };
@@ -24,6 +25,11 @@ service class RequestInterceptor {
 
         [jwt:Header, jwt:Payload] [_, payload] = check jwt:decode(jwtAssertion);
         io:println("JWT Payload: " + payload.toString());
+        if !payload.hasKey("email") {
+            return <http:Unauthorized> {
+                body:  "Email not found in the JWT"
+            };
+        }
         string email = payload["email"].toString();
         io:println("User Email: " + email);
         if isUsageLimitReached(email) {
