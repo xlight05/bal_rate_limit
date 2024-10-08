@@ -1,55 +1,69 @@
 import ballerina/http;
 import ballerina/jwt;
-import ballerina/io;
+import ballerinax/redis;
 
 configurable boolean localDev = true;
+configurable string host = ?;
+configurable int port = ?;
+configurable string password = ?;
+configurable string username = ?;
 
-isolated int count = 0 ;
+final redis:Client redisClient = check new (
+    connection = {
+        host: host,
+        port: port,
+        password: password,
+        username: username
+    },
+    connectionPooling = true,
+    secureSocket = {
+        verifyMode: redis:NONE
+    }
+);
 
 service class RequestInterceptor {
     *http:RequestInterceptor;
     isolated resource function 'default [string... path](http:RequestContext ctx, @http:Header {name: "x-jwt-assertion"} string? jwtAssertion)
-        returns http:TooManyRequests|http:Unauthorized| http:NextService|error? {
+        returns http:TooManyRequests|http:Unauthorized|http:NextService|error? {
 
         if localDev {
             return ctx.next();
         }
 
-        //To enable try it mode in choreo.
+        // To enable try it mode in choreo.
         if jwtAssertion is () {
             return <http:Unauthorized> {
             };
         }
 
-        io:println(jwtAssertion);
-
         [jwt:Header, jwt:Payload] [_, payload] = check jwt:decode(jwtAssertion);
-        io:println("JWT Payload: " + payload.toString());
         if !payload.hasKey("email") {
             return <http:Unauthorized> {
                 body:  "Email not found in the JWT"
             };
         }
         string email = payload["email"].toString();
-        io:println("User Email: " + email);
-        if isUsageLimitReached(email) {
+        if check isUsageLimitReached(email) {
             return <http:TooManyRequests> {
                 body:  "Usage limit reached for the user"
             };
         }
-        lock {
-            count = count + 1;
-        }
+        int _ = check redisClient->incrBy(email, 1);
         return ctx.next();
     }
 }
 
-isolated function isUsageLimitReached(string email) returns boolean {
+isolated function isUsageLimitReached(string email) returns boolean|error {
     // Check the usage limit for the user
-    lock {
-        if count > 5 {
-            return true;
-        }
+    string? tokenCount = check redisClient->get(email);
+    if tokenCount is () {
+        string _ = check redisClient->set(email, "0");
+        return false;
     }
+    int count = check int:fromString(tokenCount);
+    if count >= 5 {
+        return true;
+    }
+
     return false;
 }
