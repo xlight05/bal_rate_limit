@@ -1,12 +1,16 @@
 import ballerina/http;
 import ballerina/jwt;
 import ballerinax/redis;
+import ballerina/io;
 
 configurable boolean localDev = true;
 configurable string host = ?;
 configurable int port = ?;
 configurable string password = ?;
 configurable string username = ?;
+configurable string env = ?;
+
+configurable int MAX_TOKEN_COUNT_PER_USER = 5;
 
 final redis:Client redisClient = check new (
     connection = {
@@ -35,33 +39,37 @@ service class RequestInterceptor {
             return <http:Unauthorized> {
             };
         }
+        io:println(jwtAssertion);
 
         [jwt:Header, jwt:Payload] [_, payload] = check jwt:decode(jwtAssertion);
-        if !payload.hasKey("email") {
+        string? sub = payload.sub;
+        if sub is () {
             return <http:Unauthorized> {
-                body:  "Email not found in the JWT"
+                body:  "Subject not found"
             };
         }
-        string email = payload["email"].toString();
-        if check isUsageLimitReached(email) {
+
+        string redisKey = string `bal-${env}-${sub}`;
+        if check isUsageLimitReached(redisKey) {
             return <http:TooManyRequests> {
                 body:  "Usage limit reached for the user"
             };
         }
-        int _ = check redisClient->incrBy(email, 1);
+        //TODO: Change based on token usage
+        int _ = check redisClient->incrBy(redisKey, 1);
         return ctx.next();
     }
 }
 
-isolated function isUsageLimitReached(string email) returns boolean|error {
+isolated function isUsageLimitReached(string id) returns boolean|error {
     // Check the usage limit for the user
-    string? tokenCount = check redisClient->get(email);
+    string? tokenCount = check redisClient->get(id);
     if tokenCount is () {
-        string _ = check redisClient->set(email, "0");
+        string _ = check redisClient->set(id, "0");
         return false;
     }
     int count = check int:fromString(tokenCount);
-    if count >= 5 {
+    if count >= MAX_TOKEN_COUNT_PER_USER {
         return true;
     }
 
